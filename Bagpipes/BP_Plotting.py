@@ -8,13 +8,18 @@ import bagpipes as pipes
 import pandas as pd
 import seaborn as sb
 import sys
-from BP_PreLoad import GetIndex
+from BP_Preload import GetIndex
 from Bagpipes_Fitting_w_Spectra import *
 
-plt.rcParams['axes.linewidth'] = 1.5
-plt.rcParams['font.family'] = 'serif'
-plt.rcParams['xtick.labelsize'] = 13
-plt.rcParams['ytick.labelsize'] = 13
+
+
+plt.rcParams.update({
+    'axes.linewidth': 1.5,
+    'font.family': 'serif',
+    'xtick.labelsize': 13,
+    'ytick.labelsize': 13
+})
+
 
 
 xlabels = {'delayed:age': 'Age [Gyr]', 
@@ -43,6 +48,47 @@ def galaxy_ID(fit):
 
     return fit.galaxy.ID
 
+def getting_1d_spectrum(fit):
+
+    spec = fit.posterior.samples['spectrum']
+    
+    l16, med, u84 = np.percentile(spec, q = (16, 50, 84), axis = 0)
+
+    return l16, med, u84, spec
+
+def getting_input_spectrum(fit):
+
+    input_data = fit.fitted_model.galaxy.spectrum
+    input_wave = input_data[:, 0]
+    input_fnu = input_data[:, 1]
+    input_fnu_err = input_data[:, 2]
+
+    return input_wave, input_fnu, input_fnu_err
+
+def get_spec_calib(fit):
+
+    calib_model = fit.posterior.fitted_model.calib.model
+
+    return calib_model
+    
+def plot_1d_spectrum_and_model(fit):
+
+    model_l16, model_med, model_u84, model_spec = getting_1d_spectrum(fit)
+    
+    input_wave, input_fnu, input_fnu_err = getting_input_spectrum(fit)
+
+    calib = get_spec_calib(fit)
+
+    fig, ax = plt.subplots(1, 1, figsize = (12, 6), constrained_layout = True)
+    
+    ax.step(input_wave, input_fnu*calib, where = 'mid', color = 'red')
+    ax.step(input_wave, med, where = 'mid', color = 'purple')
+    ax.fill_between(input_wave, u84, l16, step = 'mid')
+    ax.set_xlabel('Wavelength [Angstroms]', fontsize = 15)
+    ax.set_ylabel('Flux', fontsize = 15)
+    
+    return fig, ax
+
 def posterior_specs(fit):
 
     fit.posterior.get_advanced_quantities()
@@ -65,82 +111,35 @@ def getting_spectrum_bounds(fit):
     return (low_sig_spec, median_spec, high_sig_spec)
 
 
-def plot_SFH_post(fit, ax = None, logy = False, logx = False, xlim = (-1, 2000), min_chisqr = False):
-    
+def plot_SFH_post(fit, ax=None, logy=False, logx=False, xlim=(-1, 2000), min_chisqr=False):
     SFH = fit.posterior.samples['sfh']
-    
-    l16_sfh, median_sfh, u84_sfh = np.percentile( SFH, 
-                                                  axis = 0, 
-                                                  q = (16, 50, 84))
+    l16_sfh, median_sfh, u84_sfh = np.percentile(SFH, axis=0, q=(16, 50, 84))
     ages = fit.posterior.sfh.ages
+    Myr = 1e6
 
-    
-    if ax == None:
-    
-        fig = plt.figure(figsize = (10, 5), constrained_layout = True)
-        Myr = 1e6
-        #plotting the input spectrum
-        plt.fill_between(ages/Myr, 
-                         y1 = u84_sfh , 
-                         y2 = l16_sfh, 
-                         color = 'dodgerblue')
-        
-        plt.plot(ages/Myr, median_sfh, color = 'black', label = 'Median SFH')
-        
-        if min_chisqr:
-            
-            chisqr = fit.posterior.samples['chisq_phot']
-        
-            min_chiqsr_idx = np.argmin(chisqr)
-        
-            plt.plot(ages/Myr, SFH[min_chiqsr_idx], color = 'red', label = r'Minimum $\chi^2$ SFH')
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(10, 5), constrained_layout=True)
 
-        plt.ylabel(r'SFR [M$_{\odot}$yr$^{-1}$]', fontsize = 15)
-        plt.xlabel(r'Lookback Time [Myr]', fontsize = 15)
-        plt.minorticks_on()
-        
-        if logy:
-            plt.yscale('log')
-            
-        if logx:
-            plt.xscale('log')
-            
-        plt.xlim(xlim)
-        plt.legend()
+    ax.fill_between(ages / Myr, y1=u84_sfh, y2=l16_sfh, color='dodgerblue')
+    ax.plot(ages / Myr, median_sfh, color='black', label='Median SFH')
 
-        return fig
-    
-    else:
-        Myr = 1e6
-        #plotting the SFH posterior
-        ax.fill_between(ages/Myr , 
-                         y1 = u84_sfh , 
-                         y2 = l16_sfh, 
-                         color = 'dodgerblue')
-        
-        ax.plot(ages/Myr, median_sfh, color = 'black', label = 'Median SFH')
-        if min_chisqr:
-            
-            chisqr = fit.posterior.samples['chisq_phot']
-        
-            min_chiqsr_idx = np.argmin(chisqr)
-        
-            ax.plot(ages/Myr, SFH[min_chiqsr_idx], color = 'red', label = r'Minimum $\chi^2$ SFH')
+    if min_chisqr:
+        chisqr = fit.posterior.samples['chisq_phot']
+        min_chiqsr_idx = np.argmin(chisqr)
+        ax.plot(ages / Myr, SFH[min_chiqsr_idx], color='red', label=r'Minimum $\chi^2$ SFH')
 
-        ax.set_ylabel(r'SFR [M$_{\odot}$yr$^{-1}$]', fontsize = 15)
-        ax.set_xlabel(r'Lookback Time [Myr]', fontsize = 15)
-        ax.set_xlim(xlim)
-        
-        if logy:
-            ax.set_yscale('log')
-            
-        if logx:
-            ax.set_xscale('log')
-        
-        ax.minorticks_on()
-        ax.legend()
+    ax.set_ylabel(r'SFR [M$_{\odot}$yr$^{-1}$]', fontsize=15)
+    ax.set_xlabel(r'Lookback Time [Myr]', fontsize=15)
+    ax.minorticks_on()
 
-        return ax
+    if logy:
+        ax.set_yscale('log')
+
+    if logx:
+        ax.set_xscale('log')
+
+    ax.set_xlim(xlim)
+    ax.legend()
 
 def getting_photometry(fit):
 
@@ -450,80 +449,6 @@ def convert_to_microjansky(flux):
     
     return muJy
 
-# def load_phot(ID):
-    
-#     Bagpipes_Phot_DF = pd.read_csv('../../data/Final_Matches/NEP/Original_Photom_For_Bagpipes.txt', 
-#                                    sep = ' ', index_col = 0)
-    
-#     ID = int(ID)
-    
-#     #defining the columns we will use in the photometry
-#     flux_cols = ['CFHT_u_FLUX',
-#                      'HSC_g_FLUX',
-#                      'HSC_r_FLUX',
-#                      'HSC_i_FLUX',
-#                      'HSC_z_FLUX',
-#                      'HSC_y_FLUX',
-#                      'IRAC_CH1_FLUX',
-#                      'IRAC_CH2_FLUX']
-
-#     flux_err_cols = ['CFHT_u_FLUXERR',
-#                          'HSC_g_FLUXERR',
-#                          'HSC_r_FLUXERR',
-#                          'HSC_i_FLUXERR',
-#                          'HSC_z_FLUXERR',
-#                          'HSC_y_FLUXERR',
-#                          'IRAC_CH1_FLUXERR',
-#                          'IRAC_CH2_FLUXERR']
-
-#     non_irac_fluxes = ['CFHT_u_FLUX',
-#                          'HSC_g_FLUX',
-#                          'HSC_r_FLUX',
-#                          'HSC_i_FLUX',
-#                          'HSC_z_FLUX',
-#                          'HSC_y_FLUX']
-
-#     non_irac_err = ['CFHT_u_FLUXERR',
-#                          'HSC_g_FLUXERR',
-#                          'HSC_r_FLUXERR',
-#                          'HSC_i_FLUXERR',
-#                          'HSC_z_FLUXERR',
-#                          'HSC_y_FLUXERR']
-    
-#     #getting the full flux and flux error info
-#     photom_flux = Bagpipes_Phot_DF.loc[ID, flux_cols]
-#     photom_flux_err = Bagpipes_Phot_DF.loc[ID, flux_err_cols]
-
-#     #we are artificially inflating the flux errors for non_irac filters by 5%
-#     photom_flux_err[non_irac_err] = np.sqrt(((photom_flux_err[non_irac_err].values.astype(float))**2 + 
-#                                          (.05 * photom_flux[non_irac_fluxes].values.astype(float))**2))
-
-
-
-#     #############
-#     # Making error be 20% larger for IRAC 
-#     #############
-    
-#     flux_irac = ['IRAC_CH1_FLUX', 'IRAC_CH2_FLUX']
-#     error_flux_irac = ['IRAC_CH1_FLUXERR', 'IRAC_CH2_FLUXERR']
-
-#     photom_flux_err[error_flux_irac] = np.sqrt(((photom_flux_err[error_flux_irac].values.astype(float))**2 + 
-#                                                (.2 *  photom_flux[flux_irac].values.astype(float))**2))
-
-#     #getting the snr of sources
-#     snr = photom_flux/photom_flux_err
-    
-#     #if the snr is below -5 then we know it is bad we make the flux 0 and error really big
-#     bad_flux_idx = snr < -5
-
-#     #setting bad flux to a really small value and error to be really big
-#     photom_flux[bad_flux_idx] = 0
-#     photom_flux_err[bad_flux_idx] = 1e99
-
-#     TESLA_phot = np.c_[photom_flux.astype(float), photom_flux_err.astype(float)]
-
-#     return TESLA_phot
-
 def cat_phot_data(fit):
     
     get_advanced_quantities(fit)
@@ -560,9 +485,72 @@ def Plotting_Catalog_Photometry(fit, ax):
     
     return ax
 
+def plotting_spec_w_photometry_test(fit, ax=None, min_chisqr=False):
+    # Define limits for y-axis
+    upper_limit = 3
+    lower_limit = 0.3
+
+    # Get catalog flux and flux error
+    cat_flux, cat_err = cat_phot_data(fit)
+
+    # Get effective wavelengths for photometric filters
+    phot_waves = phot_wavelength(fit)
+
+    # Get best fit spectra wavelengths and spectrum
+    best_fit_wavelengths, best_fit_spec = Best_Fit_Model_Spec(fit)
+
+    # Get the BP photometric setup
+    phot_waves, fnu_phot_lower, med_fnu_phot, fnu_phot_up = Phot_Plot_Setup(fit)
+
+    # Create a new figure and axis if none is provided
+    if ax is None:
+        fig = plt.figure(figsize=(12, 10), constrained_layout=True)
+        spec2 = gridspec.GridSpec(ncols=1, nrows=3, figure=fig)
+        ax = fig.add_subplot(spec2[0, :])
+
+    # Plot the best fit spectrum
+    ax.plot(best_fit_wavelengths, best_fit_spec, label='Best Fit Spectrum')
+
+    # Plot the photometry data
+    ax.errorbar(phot_waves, cat_flux, yerr=cat_err, fmt='o', label='Photometry Data')
+
+    # Plot the photometry bounds
+    ax.fill_between(phot_waves, fnu_phot_lower, fnu_phot_up, color='gray', alpha=0.5, label='Photometry Bounds')
+
+    # Set y-axis limits
+    catalog_flux = np.unique(cat_flux)
+    if 0 in catalog_flux:
+        non_zero_mask = catalog_flux > 0
+        non_zero_phot = catalog_flux[non_zero_mask]
+        ymin = np.amin(non_zero_phot) * lower_limit
+        ymax = np.amax(non_zero_phot) * upper_limit
+    else:
+        ymin = np.amin(catalog_flux) * lower_limit
+        ymax = np.amax(catalog_flux) * upper_limit
+
+    ax.set_ylim([ymin, ymax])
+
+    # Add labels and legend
+    ax.set_xlabel('Wavelength [Å]')
+    ax.set_ylabel('Flux [Fν]')
+    ax.legend()
+
+    # Add chi-square value to the plot if required
+    if min_chisqr:
+        min_chisqr_value = np.amin(fit.posterior.samples['chisq_phot'])
+        min_chsq = round(min_chisqr_value, 2)
+        ax.text(0.05, 0.95, f'χ² = {min_chsq}', transform=ax.transAxes, fontsize=14, verticalalignment='top')
+
+        # Additional plotting logic for min_chisqr case
+        min_chisqr_idx = np.argmin(fit.posterior.samples['chisq_phot'])
+        min_chisqr_spec = fit.posterior.samples['sfh'][min_chisqr_idx]
+        ax.plot(best_fit_wavelengths, min_chisqr_spec, color='red', label='Min χ² Spectrum')
+
+    return ax
+
 def plotting_Spec_with_photometry(fit, labels = 'Lya', color = 'orchid', ax = None, 
                                   min_chisqr = True, save = False, 
-                                  plot_output = '/work/07446/astroboi/ls6/TESLA/data/Plots/Bagpipes_Plots'):
+                                  plot_output = 'Plots/'):
     
     #this is for the ylim take min and max photometry value and multiply it 
     #by the correpsonding number
